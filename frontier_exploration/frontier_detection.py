@@ -3,6 +3,7 @@ from typing import List, Optional
 
 import cv2
 import numpy as np
+import skimage.draw
 from numba import njit
 
 from frontier_exploration.utils.bresenham_line import bresenhamline
@@ -167,21 +168,17 @@ def interpolate_contour(contour):
     :param contour: A cv2 contour of shape (N, 1, 2)
     :return:
     """
-    # First, reshape and expand the frontier to be a 2D array of shape (N-1, 2, 2)
-    # representing line segments between adjacent points
-    line_segments = np.concatenate((contour[:-1], contour[1:]), axis=1).reshape(
-        (-1, 2, 2)
-    )
-    # Also add a segment connecting the last point to the first point
-    line_segments = np.concatenate(
-        (line_segments, np.array([contour[-1], contour[0]]).reshape((1, 2, 2)))
-    )
-    pts = []
-    for (x0, y0), (x1, y1) in line_segments:
-        pts.append(
-            bresenhamline(np.array([[x0, y0]]), np.array([[x1, y1]]), max_iter=-1)
-        )
-    pts = np.concatenate(pts).reshape((-1, 1, 2))
+    # use skimage.draw for faster bresenham algorithm
+    if contour.shape[0] < 2:
+        return contour
+    elif contour.shape[0] == 2:
+        pts = np.stack(skimage.draw.line(*contour[0, 0], *contour[1, 0]), axis=-1)
+    else:
+        pts = np.stack(skimage.draw.polygon_perimeter(contour[:, 0, 0], contour[:, 0, 1]), axis=-1)
+    # filter adjacent duplicates
+    mask = np.concatenate([[True], np.linalg.norm(pts[1:] - pts[:-1], axis=-1) != 0], axis=0)
+    pts = pts[mask]
+    pts = pts.reshape((-1, 1, 2))
     return pts
 
 
